@@ -1,0 +1,78 @@
+name: Apply Change
+
+on:
+  ## This workflow is triggered manually via the GitHub REST API using the
+  ## workflow_dispatch event. Inputs represent the fields sent by the
+  ## Cloudflare Worker when the user adds a service through the web UI.
+  workflow_dispatch:
+    inputs:
+      file_no:
+        description: "Patient file number"
+        required: true
+        type: string
+      patient_name_ar:
+        description: "Patient name in Arabic"
+        required: true
+        type: string
+      tooth:
+        description: "Tooth number (optional)"
+        required: false
+        type: string
+      service_name:
+        description: "Name of the added service"
+        required: true
+        type: string
+      service_price:
+        description: "Price of the added service"
+        required: true
+        type: string
+      policy_expiry:
+        description: "Policy expiry date (YYYY-MM-DD)"
+        required: true
+        type: string
+      notes:
+        description: "Any notes about the service"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply change (append CSV and write JSONL log)
+        run: |
+          python scripts/apply_change.py \
+            --file-no "${{ inputs.file_no }}" \
+            --patient-name-ar "${{ inputs.patient_name_ar }}" \
+            --tooth "${{ inputs.tooth }}" \
+            --service-name "${{ inputs.service_name }}" \
+            --service-price "${{ inputs.service_price }}" \
+            --policy-expiry "${{ inputs.policy_expiry }}" \
+            --notes "${{ inputs.notes }}"
+
+      - name: Commit changes
+        run: |
+          git config user.name "farabi-mock-bot"
+          git config user.email "bot@users.noreply.github.com"
+          # Add updated CSV and any generated logs in AUTOMATION-PROJECT
+          git add data/patients-with-services.csv
+          if [ -n "$(git status --porcelain data/patients-with-services.csv)" ]; then
+            git commit -m "Add service entry for file ${{ inputs.file_no }}"
+          fi
+          # Stage and commit log files
+          git add AUTOMATION-PROJECT/*.jsonl || true
+          if [ -n "$(git status --porcelain 'AUTOMATION-PROJECT/*.jsonl')" ]; then
+            git commit -m "Log change for file ${{ inputs.file_no }}"
+          fi
+          git push
